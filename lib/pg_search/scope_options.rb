@@ -34,7 +34,9 @@ module PgSearch
     end
 
     def conditions
-      @feature_names.map { |feature_name| "(#{sanitize_sql_array(feature_for(feature_name).conditions)})" }.join(" OR ")
+      features.map do |feature|
+        "(#{sanitize_sql_array(feature.conditions)})"
+      end.join(" OR ")
     end
 
     def primary_key
@@ -62,6 +64,10 @@ module PgSearch
       normalizer = Normalizer.new(@config)
 
       feature_class.new(@config.query, @feature_options[feature_name], @config.columns, @model, normalizer)
+    end
+
+    def features
+      @feature_names.map{|feature_name| feature_for(feature_name)}
     end
 
     def rank
