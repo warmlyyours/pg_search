@@ -19,16 +19,19 @@ module PgSearch
       @feature_names = @config.features.map { |feature_name, feature_options| feature_name }
     end
 
-    def to_hash
-      {
-        :select => "#{quoted_table_name}.*, (#{rank}) AS pg_search_rank",
-        :conditions => conditions,
-        :order => "pg_search_rank DESC, #{primary_key} ASC",
-        :joins => joins
-      }
+    def to_relation
+      model.select(select).where(conditions).joins(joins).order(order)
     end
 
     private
+
+    def select
+      "#{quoted_table_name}.*, (#{rank}) AS pg_search_rank"
+    end
+
+    def order
+      "pg_search_rank DESC, #{primary_key} ASC"
+    end
 
     def conditions
       @feature_names.map { |feature_name| "(#{sanitize_sql_array(feature_for(feature_name).conditions)})" }.join(" OR ")
