@@ -2,16 +2,8 @@ require "active_support/core_ext/module/delegation"
 
 module PgSearch
   module Features
-    class TSearch
+    class TSearch < PgSearch::Features::Feature
       delegate :connection, :quoted_table_name, :to => :'@model'
-
-      def initialize(query, options, columns, model, normalizer)
-        @query = query
-        @options = options || {}
-        @model = model
-        @columns = columns
-        @normalizer = normalizer
-      end
 
       def conditions
         ["(#{tsdocument}) @@ (#{tsquery})", interpolations]
