@@ -1,4 +1,5 @@
 require 'rake'
+require 'fileutils'
 require 'pg_search'
 
 namespace :pg_search do
@@ -17,7 +18,9 @@ namespace :pg_search do
       now = Time.now.utc
       filename = "#{now.strftime('%Y%m%d%H%M%S')}_create_pg_search_documents.rb"
 
-      File.open(Rails.root + 'db' + 'migrate' + filename, 'wb') do |migration_file|
+      FileUtils.mkdir_p(Rails.root.join('db', 'migrate'))
+
+      File.open(Rails.root.join('db', 'migrate', filename), 'wb') do |migration_file|
         migration_file.puts <<-RUBY
 class CreatePgSearchDocuments < ActiveRecord::Migration
   def self.up
