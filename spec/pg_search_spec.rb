@@ -769,6 +769,25 @@ describe "an ActiveRecord model which includes PgSearch" do
   describe ".multisearch" do
     with_table "pg_search_documents", {}, &DOCUMENTS_SCHEMA
 
+    describe "with eager loading" do
+      with_model :MultisearchableModel do
+        table do |t|
+          t.string :title
+        end
+        model do
+          include PgSearch
+          multisearchable :against => :title
+        end
+      end
+
+      let!(:record) { MultisearchableModel.create!(:title => 'find me') }
+
+      it "should work" do
+        results = PgSearch.multisearch("find me").includes(:searchable).all
+        expect { results.first.searchable }.not_to change(ActiveRecord::SQLCounter.log, :length)
+      end
+    end
+
     describe "delegation to PgSearch::Document.search" do
       subject { PgSearch.multisearch(query) }
 
