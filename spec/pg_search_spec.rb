@@ -613,7 +613,7 @@ describe "an ActiveRecord model which includes PgSearch" do
       with_model :ModelWithTsvector do
         table do |t|
           t.text 'content'
-          t.tsvector 'content_tsvector'
+          t.column 'content_tsvector', :tsvector
         end
 
         model { include PgSearch }

@@ -3,10 +3,17 @@ module PgSearch
     autoload :Rebuilder, "pg_search/multisearch/rebuilder"
 
     class << self
-      def rebuild(model, clean_up=true)
-        model.transaction do
-          PgSearch::Document.where(:searchable_type => model.name).delete_all if clean_up
-          Rebuilder.new(model).rebuild
+      def rebuild(model_class, clean_up = true)
+        rebuilder = Rebuilder.new(model_class)
+
+        if clean_up
+          model_class.transaction do
+            debugger
+            PgSearch::Document.where(:searchable_type => model_class).delete_all
+            rebuilder.rebuild
+          end
+        else
+          rebuilder.rebuild
         end
       end
     end
