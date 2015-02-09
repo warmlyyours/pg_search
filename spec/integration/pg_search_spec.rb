@@ -536,6 +536,58 @@ describe "an Active Record model which includes PgSearch" do
           expect(results.map(&:title)).to eq([])
         end
       end
+
+      context "with :negation" do
+        before do
+          ModelWithPgSearch.pg_search_scope :search_with_negation,
+            :against => :title,
+            :using => {
+              :tsearch => {:negation => true}
+            }
+        end
+
+        it "doesn't return results that contain terms prepended with '!'" do
+          included = [
+            ModelWithPgSearch.create!(:title => "one fish"),
+            ModelWithPgSearch.create!(:title => "two fish")
+          ]
+
+          excluded = [
+            ModelWithPgSearch.create!(:title => "red fish"),
+            ModelWithPgSearch.create!(:title => "blue fish")
+          ]
+
+          results = ModelWithPgSearch.search_with_negation("fish !red !blue")
+
+          expect(results).to include(*included)
+          expect(results).not_to include(*excluded)
+        end
+      end
+
+      context "without :negation" do
+        before do
+          ModelWithPgSearch.pg_search_scope :search_without_negation,
+            :against => :title,
+            :using => {
+              :tsearch => {}
+            }
+        end
+
+        it "return results that contain terms prepended with '!'" do
+          included = [
+            ModelWithPgSearch.create!(:title => "!bang")
+          ]
+
+          excluded = [
+            ModelWithPgSearch.create!(:title => "?question")
+          ]
+
+          results = ModelWithPgSearch.search_without_negation("!bang")
+
+          expect(results).to include(*included)
+          expect(results).not_to include(*excluded)
+        end
+      end
     end
 
     context "using dmetaphone" do
@@ -732,6 +784,30 @@ describe "an Active Record model which includes PgSearch" do
 
       it 'should find by a combination of the two' do
         expect(Post.search_by_content_with_tsvector("phooey commentone").map(&:id)).to eq([expected.id])
+      end
+    end
+
+    context 'using multiple tsvector columns' do
+      with_model :ModelWithTsvector do
+        model do
+          include PgSearch
+
+          pg_search_scope :search_by_multiple_tsvector_columns,
+            :against => ['content', 'message'],
+            :using => {
+              :tsearch => {
+                :tsvector_column => ['content_tsvector', 'message_tsvector'],
+                :dictionary => 'english'
+              }
+            }
+        end
+      end
+
+      it 'concats tsvector columns' do
+        expected = "#{ModelWithTsvector.quoted_table_name}.\"content_tsvector\" || "\
+                   "#{ModelWithTsvector.quoted_table_name}.\"message_tsvector\""
+
+        expect(ModelWithTsvector.search_by_multiple_tsvector_columns("something").to_sql).to include(expected)
       end
     end
 
@@ -937,29 +1013,29 @@ describe "an Active Record model which includes PgSearch" do
       before do
         SuperclassModel.pg_search_scope :search_content, :against => :content
 
-        class SubclassModel < SuperclassModel
+        class SearchableSubclassModel < SuperclassModel
         end
 
-        class AnotherSubclassModel < SuperclassModel
+        class AnotherSearchableSubclassModel < SuperclassModel
         end
       end
 
       it "returns only results for that subclass" do
         included = [
-          SubclassModel.create!(:content => "foo bar")
+          SearchableSubclassModel.create!(:content => "foo bar")
         ]
         excluded = [
-          SubclassModel.create!(:content => "baz"),
+          SearchableSubclassModel.create!(:content => "baz"),
           SuperclassModel.create!(:content => "foo bar"),
           SuperclassModel.create!(:content => "baz"),
-          AnotherSubclassModel.create!(:content => "foo bar"),
-          AnotherSubclassModel.create!(:content => "baz")
+          AnotherSearchableSubclassModel.create!(:content => "foo bar"),
+          AnotherSearchableSubclassModel.create!(:content => "baz")
         ]
 
         expect(SuperclassModel.count).to eq(6)
-        expect(SubclassModel.count).to eq(2)
+        expect(SearchableSubclassModel.count).to eq(2)
 
-        results = SubclassModel.search_content("foo bar")
+        results = SearchableSubclassModel.search_content("foo bar")
 
         expect(results).to include(*included)
         expect(results).not_to include(*excluded)
@@ -1074,7 +1150,7 @@ describe "an Active Record model which includes PgSearch" do
     end
 
     context "on an STI subclass" do
-      with_model :ASuperclassModel do
+      with_model :SuperclassModel do
         table do |t|
           t.text 'content'
           t.string 'type'
@@ -1082,14 +1158,13 @@ describe "an Active Record model which includes PgSearch" do
       end
 
       before do
-
-        class SearchableSubclassModel < ASuperclassModel
+        searchable_subclass_model = Class.new(SuperclassModel) do
           include PgSearch
           multisearchable :against => :content
         end
-
-        class NonSearchableSubclassModel < ASuperclassModel
-        end
+        stub_const("SearchableSubclassModel", searchable_subclass_model)
+        stub_const("AnotherSearchableSubclassModel", searchable_subclass_model)
+        stub_const("NonSearchableSubclassModel", Class.new(SuperclassModel))
       end
 
       it "returns only results for that subclass" do
@@ -1098,21 +1173,68 @@ describe "an Active Record model which includes PgSearch" do
         ]
         excluded = [
           SearchableSubclassModel.create!(:content => "baz"),
-          ASuperclassModel.create!(:content => "foo bar"),
-          ASuperclassModel.create!(:content => "baz"),
+          SuperclassModel.create!(:content => "foo bar"),
+          SuperclassModel.create!(:content => "baz"),
           NonSearchableSubclassModel.create!(:content => "foo bar"),
           NonSearchableSubclassModel.create!(:content => "baz")
         ]
 
-        expect(ASuperclassModel.count).to be 6
+        expect(SuperclassModel.count).to be 6
         expect(SearchableSubclassModel.count).to be 2
+
+        expect(PgSearch::Document.count).to be 2
 
         results = PgSearch.multisearch("foo bar")
 
-        expect(results.map(&:searchable_id)).to include(*included.map(&:id))
-        expect(results.map(&:searchable_id)).not_to include(*excluded.map(&:id))
-        expect(results.map(&:searchable_type)).to include(*%w[SearchableSubclassModel])
-        expect(results.map(&:searchable_type)).not_to include(*%w[ASuperclassModel NonSearchableSubclassModel])
+        expect(results.length).to be 1
+        expect(results.first.searchable.class).to be SearchableSubclassModel
+        expect(results.first.searchable).to eq included.first
+      end
+
+      it "updates an existing STI model does not create a new pg_search document" do
+        model = SearchableSubclassModel.create!(:content => "foo bar")
+        expect(SearchableSubclassModel.count).to eq(1)
+        # We fetch the model from the database again otherwise
+        # the pg_search_document from the cache is used.
+        model = SearchableSubclassModel.find(model.id)
+        model.content = "foo"
+        model.save!
+        results = PgSearch.multisearch("foo")
+        expect(results.size).to eq(SearchableSubclassModel.count)
+      end
+
+      it "reindexing works" do
+        NonSearchableSubclassModel.create!(:content => "foo bar")
+        NonSearchableSubclassModel.create!(:content => "baz")
+        expected = SearchableSubclassModel.create!(:content => "baz")
+        SuperclassModel.create!(:content => "foo bar")
+        SuperclassModel.create!(:content => "baz")
+        SuperclassModel.create!(:content => "baz2")
+
+        expect(SuperclassModel.count).to be 6
+        expect(NonSearchableSubclassModel.count).to be 2
+        expect(SearchableSubclassModel.count).to be 1
+
+        expect(PgSearch::Document.count).to be 1
+
+        PgSearch::Multisearch.rebuild(SearchableSubclassModel)
+
+        expect(PgSearch::Document.count).to be 1
+        expect(PgSearch::Document.first.searchable.class).to be SearchableSubclassModel
+        expect(PgSearch::Document.first.searchable).to eq expected
+      end
+
+      it "reindexing searchable STI doesn't clobber other related STI models" do
+        searchable_s = SearchableSubclassModel.create!(:content => "baz")
+        searchable_a = AnotherSearchableSubclassModel.create!(:content => "baz")
+
+        expect(PgSearch::Document.count).to be 2
+        PgSearch::Multisearch.rebuild(SearchableSubclassModel)
+        expect(PgSearch::Document.count).to be 2
+
+        classes = PgSearch::Document.all.collect {|d| d.searchable.class }
+        expect(classes).to include SearchableSubclassModel
+        expect(classes).to include AnotherSearchableSubclassModel
       end
     end
   end
@@ -1137,7 +1259,7 @@ describe "an Active Record model which includes PgSearch" do
           @multisearch_enabled_inside = PgSearch.multisearch_enabled?
           raise
         end
-      rescue
+      rescue # rubocop:disable Lint/HandleExceptions
       end
 
       @multisearch_enabled_after = PgSearch.multisearch_enabled?

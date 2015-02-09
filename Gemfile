@@ -5,11 +5,13 @@ gemspec
 gem 'pg', :platform => :ruby
 gem "activerecord-jdbcpostgresql-adapter", ">= 1.3.1", :platform => :jruby
 
-gem "activerecord", ENV["ACTIVE_RECORD_VERSION"] if ENV["ACTIVE_RECORD_VERSION"]
-gem "activerecord", :github => "rails", :branch => ENV["ACTIVE_RECORD_BRANCH"] if ENV["ACTIVE_RECORD_BRANCH"]
+if ENV['ACTIVE_RECORD_BRANCH']
+  gem 'activerecord', :git => 'https://github.com/rails/rails.git', :branch => ENV['ACTIVE_RECORD_BRANCH']
+  gem 'arel', :git => 'https://github.com/rails/arel.git' if ENV['ACTIVE_RECORD_BRANCH'] == 'master'
+end
 
-if ENV["TRAVIS"]
-  gem 'coveralls', :require => false, :platform => :mri_20
+if ENV['ACTIVE_RECORD_VERSION']
+  gem 'activerecord', ENV['ACTIVE_RECORD_VERSION']
 end
 
 group :development do

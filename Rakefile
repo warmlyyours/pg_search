@@ -1,13 +1,10 @@
 require 'bundler'
 Bundler::GemHelper.install_tasks
 
-task :default => :spec
+require 'rspec/core/rake_task'
+RSpec::Core::RakeTask.new(:spec)
 
-def bundle_exec(command)
-  sh %Q{bundle update && bundle exec #{command}}
-end
+require "rubocop/rake_task"
+RuboCop::RakeTask.new
 
-desc "Run all specs"
-task "spec" do
-  bundle_exec("rspec spec")
-end
+task :default => %w[ spec rubocop ]

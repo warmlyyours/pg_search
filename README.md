@@ -1,9 +1,10 @@
 # [pg_search](http://github.com/Casecommons/pg_search/)
 
 [![Build Status](https://secure.travis-ci.org/Casecommons/pg_search.svg?branch=master)](https://travis-ci.org/Casecommons/pg_search)
-[![Code Climate](https://img.shields.io/codeclimate/github/Casecommons/pg_search.svg)](https://codeclimate.com/github/Casecommons/pg_search)
-[![Gem Version](https://badge.fury.io/rb/pg_search.svg)](https://rubygems.org/gems/pg_search)
-[![Dependency Status](https://gemnasium.com/Casecommons/pg_search.svg)](https://gemnasium.com/Casecommons/pg_search)
+[![Code Climate](https://img.shields.io/codeclimate/github/Casecommons/pg_search.svg?style=flat)](https://codeclimate.com/github/Casecommons/pg_search)
+[![Gem Version](https://img.shields.io/gem/v/pg_search.svg?style=flat)](https://rubygems.org/gems/pg_search)
+[![Dependency Status](https://img.shields.io/gemnasium/Casecommons/pg_search.svg?style=flat)](https://gemnasium.com/Casecommons/pg_search)
+[![Inline docs](http://inch-ci.org/github/Casecommons/pg_search.svg?branch=master&style=flat)](http://inch-ci.org/github/Casecommons/pg_search)
 
 ## DESCRIPTION
 
@@ -561,6 +562,36 @@ robin = Superhero.create :name => 'Robin'
 
 Superhero.whose_name_starts_with("Bat") # => [batman, batgirl]
 ```
+##### :negation
+
+PostgreSQL's full text search matches all search terms by default. If you want
+to exclude certain words, you can set :negation to true. Then any term that begins with
+an exclamation point `!` will be excluded from the results. Since this
+is a :tsearch-specific option, you should pass it to :tsearch directly, as
+shown in the following example.
+
+Note that combining this with other search features can have unexpected results. For
+example, :trigram searches don't have a concept of excluded terms, and thus if you
+use both :tsearch and :trigram in tandem, you may still find results that contain the
+term that you were trying to exclude.
+
+```ruby
+class Animal < ActiveRecord::Base
+  include PgSearch
+  pg_search_scope :with_name_matching,
+                  :against => :name,
+                  :using => {
+                    :tsearch => {:negation => true}
+                  }
+end
+
+one_fish = Animal.create(:name => "one fish")
+two_fish = Animal.create(:name => "two fish")
+red_fish = Animal.create(:name => "red fish")
+blue_fish = Animal.create(:name => "blue fish")
+
+Animal.with_name_matching("fish !red !blue") # => [one_fish, two_fish]
+```
 
 ##### :dictionary
 
@@ -878,19 +909,20 @@ To use this functionality you'll need to do a few things:
     function uses.
 *   Add the option to pg_search_scope, e.g:
 
-        pg_search_scope :fast_content_search,
-                        :against => :content,
-                        :using => {
-                          dmetaphone: {
-                            tsvector_column: 'tsvector_content_dmetaphone'
-                          },
-                          tsearch: {
-                            dictionary: 'english',
-                            tsvector_column: 'tsvector_content_tsearch'
-                          }
-                          trigram: {} # trigram does not use tsvectors
-                        }
-
+    ```ruby
+    pg_search_scope :fast_content_search,
+                    :against => :content,
+                    :using => {
+                      dmetaphone: {
+                        tsvector_column: 'tsvector_content_dmetaphone'
+                      },
+                      tsearch: {
+                        dictionary: 'english',
+                        tsvector_column: 'tsvector_content_tsearch'
+                      }
+                      trigram: {} # trigram does not use tsvectors
+                    }
+    ```
 *   You cannot dump a `tsvector` column to `schema.rb`. Instead, you need to switch to using the native PostgreSQL SQL format schema dump.
     In your `config/application.rb` you should set
 
@@ -901,6 +933,36 @@ To use this functionality you'll need to do a few things:
 
 Please note that the :against column is only used when the tsvector_column is
 not present for the search type.
+
+#### Combining multiple tsvectors
+
+It's possible to search against more than one tsvector at a time. This could be useful if you want to maintain multiple search scopes but do not want to maintain separate tsvectors for each scope. For example:
+
+```ruby
+pg_search_scope :search_title,
+                :against => :title,
+                :using => {
+                  :tsearch => {
+                    :tsvector_column => "title_tsvector"
+                  }
+                }
+
+pg_search_scope :search_body,
+                :against => :body,
+                :using => {
+                  :tsearch => {
+                    :tsvector_column => "body_tsvector"
+                  }
+                }
+
+pg_search_scope :search_title_and_body,
+                :against => [:title, :body],
+                :using => {
+                  :tsearch => {
+                    :tsvector_column => ["title_tsvector", "body_tsvector"]
+                  }
+                }
+```
 
 ### Configuring ranking and ordering
 
