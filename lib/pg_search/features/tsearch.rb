@@ -47,10 +47,6 @@ module PgSearch
           Arel::Nodes::InfixOperation.new("||", memo, Compatibility.build_quoted(term))
         end
 
-        Arel::Nodes::NamedFunction.new(
-          "to_tsquery",
-          [dictionary, tsquery_sql]
-        ).to_sql
       end
 
       def tsquery
