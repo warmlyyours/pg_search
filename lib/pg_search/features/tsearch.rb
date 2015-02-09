@@ -35,7 +35,7 @@ module PgSearch
           negated = true
         end
 
-        if (options[:prefix] == true or (options[:prefix] == :query and !unsanitized_term.index('*').nil?)
+        if (options[:prefix] == true or (options[:prefix] == :query and !unsanitized_term.index('*').nil?))
           prefix = true
         end
 
