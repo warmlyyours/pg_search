@@ -34,9 +34,10 @@ module PgSearch
         term_sql = Arel.sql(normalize(connection.quote(sanitized_term)))
 
         # After this, the SQL expression evaluates to a string containing the term surrounded by single-quotes.
-        # If :prefix is true, then the term will also have :* appended to the end.
-
+        # If :prefix is true, then the term will have :* appended to the end.
+        # If :negated is true, then the term will have ! prepended to the front.
         terms = [
+          (Compatibility.build_quoted('!') if negated),
           Compatibility.build_quoted("' "),
           term_sql,
           Compatibility.build_quoted(" '"),
@@ -46,6 +47,11 @@ module PgSearch
         tsquery_sql = terms.inject do |memo, term|
           Arel::Nodes::InfixOperation.new("||", memo, Compatibility.build_quoted(term))
         end
+
+        Arel::Nodes::NamedFunction.new(
+        "to_tsquery",
+        [dictionary, tsquery_sql]
+        ).to_sql
 
       end
 
