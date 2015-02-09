@@ -37,7 +37,7 @@ module PgSearch
         # If :prefix is true, then the term will have :* appended to the end.
         # If :negated is true, then the term will have ! prepended to the front.
         terms = [
-          (Compatibility.build_quoted('!') if negated),
+          (Compatibility.build_quoted('!') if options[:negated]),
           Compatibility.build_quoted("' "),
           term_sql,
           Compatibility.build_quoted(" '"),
