@@ -94,6 +94,43 @@ describe PgSearch::Multisearchable do
         end
       end
     end
+
+    describe "populating the searchable text" do
+      let(:record) { ModelThatIsMultisearchable.new }
+      subject { record }
+
+      before do
+        ModelThatIsMultisearchable.multisearchable(multisearchable_options)
+      end
+
+      context "when searching against a single column" do
+        let(:multisearchable_options) { {:against => :some_content} }
+        let(:text) { "foo bar" }
+        before do
+          allow(record).to receive(:some_content) { text }
+          record.save
+        end
+
+        describe '#content' do
+          subject { super().pg_search_document.content }
+          it { is_expected.to eq(text) }
+        end
+      end
+
+      context "when searching against multiple columns" do
+        let(:multisearchable_options) { {:against => [:attr1, :attr2]} }
+        before do
+          allow(record).to receive(:attr1) { '1' }
+          allow(record).to receive(:attr2) { '2' }
+          record.save
+        end
+
+        describe '#content' do
+          subject { super().pg_search_document.content }
+          it { is_expected.to eq("1 2") }
+        end
+      end
+    end
   end
 
   describe "a model which is conditionally multisearchable using a Proc" do
@@ -105,7 +142,7 @@ describe PgSearch::Multisearchable do
 
         model do
           include PgSearch
-          multisearchable :if => lambda { |record| record.multisearchable? }
+          multisearchable :if => ->(record) { record.multisearchable? }
         end
       end
 
@@ -233,7 +270,7 @@ describe PgSearch::Multisearchable do
 
         model do
           include PgSearch
-          multisearchable :unless => lambda { |record| record.not_multisearchable? }
+          multisearchable :unless => ->(record) { record.not_multisearchable? }
         end
       end
 
@@ -309,7 +346,6 @@ describe PgSearch::Multisearchable do
                   expect { PgSearch::Document.find(document.id) }.to raise_error(ActiveRecord::RecordNotFound)
                 end
               end
-
             end
           end
 

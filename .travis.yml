@@ -2,11 +2,13 @@ language: ruby
 sudo: false
 
 rvm:
-  - "1.9"
-  - "2.0"
-  - "2.1"
+  - "2.3"
   - "2.2"
+  - "2.1"
+  - "2.0"
+  - "1.9"
   - jruby-19mode
+  - jruby-9.0.0.0
 
 env:
   - ACTIVE_RECORD_BRANCH="master"
@@ -21,7 +23,7 @@ env:
 
 matrix:
   allow_failures:
-    - rvm: jruby-19mode
+    - rvm: "2.3"
     - env: ACTIVE_RECORD_BRANCH="master"
     - env: ACTIVE_RECORD_BRANCH="4-2-stable"
     - env: ACTIVE_RECORD_BRANCH="4-1-stable"
@@ -35,8 +37,14 @@ matrix:
       env: ACTIVE_RECORD_BRANCH="master"
     - rvm: jruby-19mode
       env: ACTIVE_RECORD_BRANCH="master"
+    - rvm: jruby-9.0.0.0
+      env: ACTIVE_RECORD_BRANCH="master"
 
 before_script:
   - "psql -c 'create database pg_search_test;' -U postgres >/dev/null"
 
 script: "bin/rake"
+
+addons:
+  code_climate:
+    repo_token: 0a0e3e45118bc447e677d52c21d056a5471c4921d54f96ed7b2550d9fc5043ea

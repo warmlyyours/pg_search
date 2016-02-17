@@ -1,17 +1,20 @@
 # [pg_search](http://github.com/Casecommons/pg_search/)
 
+[![Gem Version](https://img.shields.io/gem/v/pg_search.svg?style=flat)](https://rubygems.org/gems/pg_search)
 [![Build Status](https://secure.travis-ci.org/Casecommons/pg_search.svg?branch=master)](https://travis-ci.org/Casecommons/pg_search)
 [![Code Climate](https://img.shields.io/codeclimate/github/Casecommons/pg_search.svg?style=flat)](https://codeclimate.com/github/Casecommons/pg_search)
-[![Gem Version](https://img.shields.io/gem/v/pg_search.svg?style=flat)](https://rubygems.org/gems/pg_search)
+[![Test Coverage](https://codeclimate.com/github/Casecommons/pg_search/badges/coverage.svg)](https://codeclimate.com/github/Casecommons/pg_search/coverage)
 [![Dependency Status](https://img.shields.io/gemnasium/Casecommons/pg_search.svg?style=flat)](https://gemnasium.com/Casecommons/pg_search)
 [![Inline docs](http://inch-ci.org/github/Casecommons/pg_search.svg?branch=master&style=flat)](http://inch-ci.org/github/Casecommons/pg_search)
+[![Join the chat at https://gitter.im/Casecommons/pg_search](https://img.shields.io/badge/gitter-join%20chat-blue.svg)](https://gitter.im/Casecommons/pg_search?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Stories in Ready](https://badge.waffle.io/Casecommons/pg_search.svg?label=ready&title=Ready)](https://waffle.io/Casecommons/pg_search)
 
 ## DESCRIPTION
 
 PgSearch builds named scopes that take advantage of PostgreSQL's full text
 search.
 
-Read the blog post introducing PgSearch at http://pivotallabs.com/pg-search/
+Read the blog post introducing PgSearch at http://blog.pivotal.io/labs/labs/pg-search
 
 ## REQUIREMENTS
 
@@ -24,13 +27,17 @@ Read the blog post introducing PgSearch at http://pivotallabs.com/pg-search/
 
 ## INSTALL
 
-    gem install pg_search
+```bash
+$ gem install pg_search
+```
 
 ### Rails 3.1, 3.2, 4.0 or later, Ruby 1.9.2, 2.0, or later
 
 In Gemfile
 
-    gem 'pg_search'
+```ruby
+gem 'pg_search'
+```
 
 ### Rails 3.0
 
@@ -38,7 +45,9 @@ The newest versions of PgSearch no longer support Rails 3.0. However, the 0.5
 series still works. It's not actively maintained, but submissions are welcome
 for backports and bugfixes.
 
-    gem 'pg_search', "~> 0.5.7"
+```ruby
+gem 'pg_search', "~> 0.5.7"
+```
 
 The 0.5 branch lives at
 https://github.com/Casecommons/pg_search/tree/0.5-stable
@@ -49,7 +58,9 @@ The newest versions of PgSearch no longer support Rails 2. However, the 0.2
 series still works. It's not actively maintained, but submissions are welcome
 for backports and bugfixes.
 
-    gem 'pg_search', "~> 0.2.0"
+```ruby
+gem 'pg_search', "~> 0.2.0"
+```
 
 The 0.2 branch lives at
 https://github.com/Casecommons/pg_search/tree/0.2-stable
@@ -60,7 +71,9 @@ In addition to installing and requiring the gem, you may want to include the
 PgSearch rake tasks in your Rakefile. This isn't necessary for Rails projects,
 which gain the Rake tasks via a Railtie.
 
-    load "pg_search/tasks.rb"
+```ruby
+load "pg_search/tasks.rb"
+```
 
 ### Ruby 1.8.7 or earlier
 
@@ -68,7 +81,9 @@ The newest versions of PgSearch no longer support Ruby 1.8.7. However, the 0.6
 series still works. It's not actively maintained, but submissions are welcome
 for backports and bugfixes.
 
-    gem 'pg_search', "~> 0.6.4"
+```ruby
+gem 'pg_search', "~> 0.6.4"
+```
 
 The 0.6 branch lives at
 https://github.com/Casecommons/pg_search/tree/0.6-stable
@@ -105,8 +120,10 @@ search.
 Before using multi-search, you must generate and run a migration to create the
 pg_search_documents database table.
 
-    $ rails g pg_search:migration:multisearch
-    $ rake db:migrate
+```bash
+$ rails g pg_search:migration:multisearch
+$ rake db:migrate
+```
 
 #### multisearchable
 
@@ -223,7 +240,7 @@ receive SQL requests when necessary.
 ```ruby
 PgSearch.multisearch("Bertha").limit(10)
 PgSearch.multisearch("Juggler").where(:searchable_type => "Occupation")
-PgSearch.multisearch("Alamo").page(3).per_page(30)
+PgSearch.multisearch("Alamo").page(3).per(30)
 PgSearch.multisearch("Diagonal").find_each do |document|
   puts document.searchable.updated_at
 end
@@ -788,7 +805,9 @@ Website.kinda_spelled_like("Yahoo!") # => [yahooo, yohoo]
 By default, trigram searches find records which have a similarity of at least 0.3
 using pg_trgm's calculations. You may specify a custom threshold if you prefer.
 Higher numbers match more strictly, and thus return fewer results. Lower numbers
-match more permissively, letting in more results.
+match more permissively, letting in more results. Please note that setting a trigram
+threshold will force a table scan as the derived query uses the
+`similarity()` function instead of the `%` operator.
 
 ```ruby
 class Vegetable < ActiveRecord::Base
@@ -1023,19 +1042,36 @@ descending by updated_at, to rank the most recently updated records first.
 pg_search_scope :search_and_break_ties_by_latest_update,
                 :against => [:title, :content],
                 :order_within_rank => "blog_posts.updated_at DESC"
-````
+```
 
 #### PgSearch#pg_search_rank (Reading a record's rank as a Float)
 
 It may be useful or interesting to see the rank of a particular record. This
 can be helpful for debugging why one record outranks another. You could also
 use it to show some sort of relevancy value to end users of an application.
-Just call .pg_search_rank on a record returned by a pg_search_scope.
+
+To retrieve the rank, call `.with_pg_search_rank` on a scope, and then call
+`.pg_search_rank` on a returned record.
+
+```ruby
+shirt_brands = ShirtBrand.search_by_name("Penguin").with_pg_search_rank
+shirt_brands[0].pg_search_rank #=> 0.0759909
+shirt_brands[1].pg_search_rank #=> 0.0607927
+```
+
+#### Search rank and chained scopes
+
+Each PgSearch scope generates a named subquery for the search rank.  If you
+chain multiple scopes then PgSearch will generate a ranking query for each
+scope, so the ranking queries must have unique names.  If you need to reference
+the ranking query (e.g. in a GROUP BY clause) you can regenerate the subquery
+name with the `PgScope::Configuration.alias` method by passing the name of the
+queried table.
 
 ```ruby
 shirt_brands = ShirtBrand.search_by_name("Penguin")
-shirt_brands[0].pg_search_rank #=> 0.0759909
-shirt_brands[1].pg_search_rank #=> 0.0607927
+  .joins(:shirt_sizes)
+  .group('shirt_brands.id, #{PgSearch::Configuration.alias('shirt_brands')}.rank')
 ```
 
 ## ATTRIBUTIONS

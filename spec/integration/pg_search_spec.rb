@@ -5,11 +5,24 @@ describe "an Active Record model which includes PgSearch" do
     table do |t|
       t.string 'title'
       t.text 'content'
+      t.integer 'parent_model_id'
       t.integer 'importance'
     end
 
     model do
       include PgSearch
+      belongs_to :parent_model
+    end
+  end
+  with_model :ParentModel do
+    table do |t|
+      t.boolean :active, default: true
+    end
+
+    model do
+      include PgSearch
+      has_many :models_with_pg_search
+      scope :active, -> { where(active: true) }
     end
   end
 
@@ -52,7 +65,7 @@ describe "an Active Record model which includes PgSearch" do
       context "dynamically" do
         it "raises an exception when invoked" do
           ModelWithPgSearch.pg_search_scope :with_unknown_option,
-            lambda { |*| {:against => :content, :foo => :bar} }
+            ->(*) { {:against => :content, :foo => :bar} }
 
           expect {
             ModelWithPgSearch.with_unknown_option("foo")
@@ -75,7 +88,7 @@ describe "an Active Record model which includes PgSearch" do
       context "dynamically" do
         it "raises an exception when invoked" do
           ModelWithPgSearch.pg_search_scope :with_unknown_using,
-            lambda { |*| {:against => :content, :using => :foo} }
+            ->(*) { {:against => :content, :using => :foo} }
 
           expect {
             ModelWithPgSearch.with_unknown_using("foo")
@@ -98,7 +111,7 @@ describe "an Active Record model which includes PgSearch" do
       context "dynamically" do
         it "raises an exception when invoked" do
           ModelWithPgSearch.pg_search_scope :with_unknown_ignoring,
-            lambda { |*| {:against => :content, :ignoring => :foo} }
+            ->(*) { {:against => :content, :ignoring => :foo} }
 
           expect {
             ModelWithPgSearch.with_unknown_ignoring("foo")
@@ -117,8 +130,7 @@ describe "an Active Record model which includes PgSearch" do
 
         context "dynamically" do
           it "raises an exception when invoked" do
-            ModelWithPgSearch.pg_search_scope :with_unknown_ignoring,
-              lambda { |*| {} }
+            ModelWithPgSearch.pg_search_scope :with_unknown_ignoring, ->(*){ {} }
 
             expect {
               ModelWithPgSearch.with_unknown_ignoring("foo")
@@ -133,6 +145,144 @@ describe "an Active Record model which includes PgSearch" do
     context "against a single column" do
       before do
         ModelWithPgSearch.pg_search_scope :search_content, :against => :content
+      end
+
+      context "when chained after a select() scope" do
+        it "honors the select" do
+          included = ModelWithPgSearch.create!(content: 'foo', title: 'bar')
+          excluded = ModelWithPgSearch.create!(content: 'bar', title: 'foo')
+
+          results = ModelWithPgSearch.select('id, title').search_content('foo')
+
+          expect(results).to include(included)
+          expect(results).to_not include(excluded)
+
+          expect(results.first.attributes.key?('content')).to eq false
+
+          expect(results.select { |record| record.title == "bar" }).to eq [included]
+          expect(results.select { |record| record.title != "bar" }).to be_empty
+        end
+      end
+
+      context "when chained before a select() scope" do
+        it "honors the select" do
+          included = ModelWithPgSearch.create!(content: 'foo', title: 'bar')
+          excluded = ModelWithPgSearch.create!(content: 'bar', title: 'foo')
+
+          results = ModelWithPgSearch.search_content('foo').select('id, title')
+
+          expect(results).to include(included)
+          expect(results).to_not include(excluded)
+
+          expect(results.first.attributes.key?('content')).to eq false
+
+          expect(results.select { |record| record.title == "bar" }).to eq [included]
+          expect(results.select { |record| record.title != "bar" }).to be_empty
+        end
+      end
+
+      context "when surrouned by select() scopes" do
+        it "honors the select" do
+          included = ModelWithPgSearch.create!(content: 'foo', title: 'bar')
+          excluded = ModelWithPgSearch.create!(content: 'bar', title: 'foo')
+
+          results = ModelWithPgSearch.select('id').search_content('foo').select('title')
+
+          expect(results).to include(included)
+          expect(results).to_not include(excluded)
+
+          expect(results.first.attributes.key?('content')).to eq false
+
+          expect(results.select { |record| record.title == "bar" }).to eq [included]
+          expect(results.select { |record| record.title != "bar" }).to be_empty
+        end
+      end
+
+      context "chained to a cross-table scope" do
+        with_model :House do
+          table do |t|
+            t.references :person
+            t.string :city
+          end
+
+          model do
+            include PgSearch
+            belongs_to :person
+            pg_search_scope :search_city, against: [:city]
+          end
+        end
+
+        with_model :Person do
+          table do |t|
+            t.string :name
+          end
+
+          model do
+            include PgSearch
+            has_many :houses
+            pg_search_scope :named, against: [:name]
+            scope :with_house_in_city, lambda { |city|
+              joins(:houses).where(House.table_name.to_sym => {city: city})
+            }
+            scope :house_search_city, lambda { |query|
+              joins(:houses).merge(House.search_city(query))
+            }
+          end
+        end
+
+        it "works when the other scope is last" do
+          house_in_duluth = House.create!(city: "Duluth")
+          second_house_in_duluth = House.create!(city: "Duluth")
+          house_in_sheboygan = House.create!(city: "Sheboygan")
+
+          bob_in_duluth =
+            Person.create!(name: "Bob", houses: [house_in_duluth])
+          bob_in_sheboygan =
+            Person.create!(name: "Bob", houses: [house_in_sheboygan])
+          sally_in_duluth =
+            Person.create!(name: "Sally", houses: [second_house_in_duluth])
+
+          results = Person.named("bob").with_house_in_city("Duluth")
+          expect(results).to include bob_in_duluth
+          expect(results).not_to include [bob_in_sheboygan, sally_in_duluth]
+        end
+
+        it "works when the other scope is first" do
+          house_in_duluth = House.create!(city: "Duluth")
+          second_house_in_duluth = House.create!(city: "Duluth")
+          house_in_sheboygan = House.create!(city: "Sheboygan")
+
+          bob_in_duluth =
+            Person.create!(name: "Bob", houses: [house_in_duluth])
+          bob_in_sheboygan =
+            Person.create!(name: "Bob", houses: [house_in_sheboygan])
+          sally_in_duluth =
+            Person.create!(name: "Sally", houses: [second_house_in_duluth])
+
+          results = Person.with_house_in_city("Duluth").named("Bob")
+          expect(results).to include bob_in_duluth
+          expect(results).not_to include [bob_in_sheboygan, sally_in_duluth]
+        end
+
+        context "when chaining merged scopes" do
+          it "does not raise an exception" do
+            relation = Person.named('foo').house_search_city('bar')
+
+            expect { relation.to_a }.to_not raise_error
+          end
+        end
+      end
+
+      context "when chaining scopes" do
+        before do
+          ModelWithPgSearch.pg_search_scope :search_title, against: :title
+        end
+
+        it "does not raise an exception" do
+          relation = ModelWithPgSearch.search_content('foo').search_title('bar')
+
+          expect { relation.to_a }.to_not raise_error
+        end
       end
 
       it "returns an empty array when a blank query is passed in" do
@@ -156,7 +306,47 @@ describe "an Active Record model which includes PgSearch" do
         ModelWithPgSearch.create!(:content => 'bar')
 
         results = ModelWithPgSearch.search_content('foo')
+        expect(results.count).to eq 1
+      end
+
+      it "returns the correct count(:all)" do
+        ModelWithPgSearch.create!(:content => 'foo')
+        ModelWithPgSearch.create!(:content => 'bar')
+
+        results = ModelWithPgSearch.search_content('foo')
         expect(results.count(:all)).to eq 1
+      end
+
+      it "supports #select" do
+        record = ModelWithPgSearch.create!(:content => 'foo')
+        other_record = ModelWithPgSearch.create!(:content => 'bar')
+
+        records_with_only_id = ModelWithPgSearch.search_content('foo').select('id')
+        expect(records_with_only_id.length).to eq 1
+
+        returned_record = records_with_only_id.first
+
+        expect(returned_record.attributes).to eq("id" => record.id)
+      end
+
+      unless ActiveRecord::VERSION::MAJOR == 3 && ActiveRecord::VERSION::MINOR < 2
+        it "supports #pluck" do
+          record = ModelWithPgSearch.create!(:content => 'foo')
+          other_record = ModelWithPgSearch.create!(:content => 'bar')
+
+          ids = ModelWithPgSearch.search_content('foo').pluck('id')
+          expect(ids).to eq [record.id]
+        end
+      end
+
+      it "supports adding where clauses using the pg_search.rank" do
+        once = ModelWithPgSearch.create!(:content => 'foo bar')
+        twice = ModelWithPgSearch.create!(:content => 'foo foo')
+
+        records = ModelWithPgSearch.search_content('foo')
+                  .where("#{PgSearch::Configuration.alias(ModelWithPgSearch.table_name)}.rank > 0.07")
+
+        expect(records).to eq [twice]
       end
 
       it "returns rows where the column contains all the terms in the query in any order" do
@@ -211,7 +401,19 @@ describe "an Active Record model which includes PgSearch" do
         loser = ModelWithPgSearch.create!(:content => 'foo')
         winner = ModelWithPgSearch.create!(:content => 'foo foo')
 
-        results = ModelWithPgSearch.search_content("foo")
+        results = ModelWithPgSearch.search_content("foo").with_pg_search_rank
+        expect(results[0].pg_search_rank).to be > results[1].pg_search_rank
+        expect(results).to eq([winner, loser])
+      end
+
+      it 'allows pg_search_rank along with a join' do
+        parent1 = ParentModel.create!(id: 98)
+        parent2 = ParentModel.create!(id: 99)
+        loser = ModelWithPgSearch.create!(:content => 'foo', parent_model: parent2)
+        winner = ModelWithPgSearch.create!(:content => 'foo foo', parent_model: parent1)
+
+        results = ModelWithPgSearch.joins(:parent_model).merge(ParentModel.active).search_content("foo").with_pg_search_rank
+        expect(results.map(&:id)).to eq [winner.id, loser.id]
         expect(results[0].pg_search_rank).to be > results[1].pg_search_rank
         expect(results).to eq([winner, loser])
       end
@@ -306,7 +508,7 @@ describe "an Active Record model which includes PgSearch" do
         in_title = ModelWithPgSearch.create!(:title => 'foo', :content => 'bar')
         in_content = ModelWithPgSearch.create!(:title => 'bar', :content => 'foo')
 
-        results  = ModelWithPgSearch.search_title_and_content('foo')
+        results = ModelWithPgSearch.search_title_and_content('foo')
         expect(results).to match_array([in_title, in_content])
       end
 
@@ -363,10 +565,10 @@ describe "an Active Record model which includes PgSearch" do
     context "using tsearch" do
       before do
         ModelWithPgSearch.pg_search_scope :search_title_with_prefixes,
-                                          :against => :title,
-                                          :using => {
-                                            :tsearch => {:prefix => true}
-                                          }
+          :against => :title,
+          :using => {
+            :tsearch => {:prefix => true}
+          }
       end
 
       if ActiveRecord::Base.connection.send(:postgresql_version) < 80400
@@ -426,7 +628,7 @@ describe "an Active Record model which includes PgSearch" do
         it "adds a #pg_search_rank method to each returned model record" do
           ModelWithPgSearch.pg_search_scope :search_content, :against => :content
 
-          result = ModelWithPgSearch.search_content("Strip Down").first
+          result = ModelWithPgSearch.search_content("Strip Down").with_pg_search_rank.first
 
           expect(result.pg_search_rank).to be_a(Float)
         end
@@ -441,7 +643,7 @@ describe "an Active Record model which includes PgSearch" do
           end
 
           it "ranks the results for documents with less text higher" do
-            results = ModelWithPgSearch.search_content_with_normalization("down")
+            results = ModelWithPgSearch.search_content_with_normalization("down").with_pg_search_rank
 
             expect(results.map(&:content)).to eq(["Down", "Strip Down", "Down and Out", "Won't Let You Down"])
             expect(results.first.pg_search_rank).to be > results.last.pg_search_rank
@@ -456,7 +658,7 @@ describe "an Active Record model which includes PgSearch" do
           end
 
           it "ranks the results equally" do
-            results = ModelWithPgSearch.search_content_without_normalization("down")
+            results = ModelWithPgSearch.search_content_without_normalization("down").with_pg_search_rank
 
             expect(results.map(&:content)).to eq(["Strip Down", "Down", "Down and Out", "Won't Let You Down"])
             expect(results.first.pg_search_rank).to eq(results.last.pg_search_rank)
@@ -474,7 +676,7 @@ describe "an Active Record model which includes PgSearch" do
           loser = ModelWithPgSearch.create!(:title => 'bar', :content => 'foo')
           winner = ModelWithPgSearch.create!(:title => 'foo', :content => 'bar')
 
-          results = ModelWithPgSearch.search_weighted_by_array_of_arrays('foo')
+          results = ModelWithPgSearch.search_weighted_by_array_of_arrays('foo').with_pg_search_rank
           expect(results[0].pg_search_rank).to be > results[1].pg_search_rank
           expect(results).to eq([winner, loser])
         end
@@ -490,7 +692,7 @@ describe "an Active Record model which includes PgSearch" do
           loser = ModelWithPgSearch.create!(:title => 'bar', :content => 'foo')
           winner = ModelWithPgSearch.create!(:title => 'foo', :content => 'bar')
 
-          results = ModelWithPgSearch.search_weighted_by_hash('foo')
+          results = ModelWithPgSearch.search_weighted_by_hash('foo').with_pg_search_rank
           expect(results[0].pg_search_rank).to be > results[1].pg_search_rank
           expect(results).to eq([winner, loser])
         end
@@ -506,7 +708,7 @@ describe "an Active Record model which includes PgSearch" do
           loser = ModelWithPgSearch.create!(:title => 'bar', :content => 'foo')
           winner = ModelWithPgSearch.create!(:title => 'foo', :content => 'bar')
 
-          results = ModelWithPgSearch.search_weighted('foo')
+          results = ModelWithPgSearch.search_weighted('foo').with_pg_search_rank
           expect(results[0].pg_search_rank).to be > results[1].pg_search_rank
           expect(results).to eq([winner, loser])
         end
@@ -520,16 +722,16 @@ describe "an Active Record model which includes PgSearch" do
               :tsearch => {:any_word => true}
             }
 
-            ModelWithPgSearch.pg_search_scope :search_title_with_all_words,
-              :against => :title
+          ModelWithPgSearch.pg_search_scope :search_title_with_all_words,
+            :against => :title
         end
 
         it "returns all results containing any word in their title" do
-          numbers = %w(one two three four).map{|number| ModelWithPgSearch.create!(:title => number)}
+          numbers = %w[one two three four].map{|number| ModelWithPgSearch.create!(:title => number)}
 
           results = ModelWithPgSearch.search_title_with_any_word("one two three four")
 
-          expect(results.map(&:title)).to eq(%w(one two three four))
+          expect(results.map(&:title)).to eq(%w[one two three four])
 
           results = ModelWithPgSearch.search_title_with_all_words("one two three four")
 
@@ -910,15 +1112,24 @@ describe "an Active Record model which includes PgSearch" do
 
       it "should return records with a rank attribute equal to the :ranked_by expression" do
         ModelWithPgSearch.create!(:content => 'foo', :importance => 10)
-        results = ModelWithPgSearch.search_content_with_importance_as_rank("foo")
+        results = ModelWithPgSearch.search_content_with_importance_as_rank("foo").with_pg_search_rank
         expect(results.first.pg_search_rank).to eq(10)
       end
 
       it "should substitute :tsearch with the tsearch rank expression in the :ranked_by expression" do
         ModelWithPgSearch.create!(:content => 'foo', :importance => 10)
 
-        tsearch_rank = ModelWithPgSearch.search_content_with_default_rank("foo").first.pg_search_rank
-        multiplied_rank = ModelWithPgSearch.search_content_with_importance_as_rank_multiplier("foo").first.pg_search_rank
+        tsearch_result =
+          ModelWithPgSearch.search_content_with_default_rank("foo").with_pg_search_rank.first
+
+        tsearch_rank = tsearch_result.pg_search_rank
+
+        multiplied_result =
+          ModelWithPgSearch.search_content_with_importance_as_rank_multiplier("foo")
+          .with_pg_search_rank
+          .first
+
+        multiplied_rank = multiplied_result.pg_search_rank
 
         expect(multiplied_rank).to be_within(0.001).of(tsearch_rank * 10)
       end
@@ -936,17 +1147,39 @@ describe "an Active Record model which includes PgSearch" do
 
       %w[tsearch trigram dmetaphone].each do |feature|
         context "using the #{feature} ranking algorithm" do
-          it "should return results with a rank" do
-            scope_name = :"search_content_ranked_by_#{feature}"
-
+          let(:scope_name) { :"search_content_ranked_by_#{feature}" }
+          before do
             ModelWithPgSearch.pg_search_scope scope_name,
               :against => :content,
               :ranked_by => ":#{feature}"
 
             ModelWithPgSearch.create!(:content => 'foo')
+          end
 
-            results = ModelWithPgSearch.send(scope_name, 'foo')
-            expect(results.first.pg_search_rank).to be_a Float
+          context "when .with_pg_search_rank is chained after" do
+            specify "its results respond to #pg_search_rank" do
+              result = ModelWithPgSearch.send(scope_name, 'foo').with_pg_search_rank.first
+              expect(result).to respond_to(:pg_search_rank)
+            end
+
+            it "returns the rank when #pg_search_rank is called on a result" do
+              results = ModelWithPgSearch.send(scope_name, 'foo').with_pg_search_rank
+              expect(results.first.pg_search_rank).to be_a Float
+            end
+          end
+
+          context "when .with_pg_search_rank is not chained after" do
+            specify "its results do not respond to #pg_search_rank" do
+              result = ModelWithPgSearch.send(scope_name, 'foo').first
+              expect(result).not_to respond_to(:pg_search_rank)
+            end
+
+            it "raises PgSearch::PgSearchRankNotSelected when #pg_search_rank is called on a result" do
+              result = ModelWithPgSearch.send(scope_name, 'foo').first
+              expect {
+                result.pg_search_rank
+              }.to raise_exception(PgSearch::PgSearchRankNotSelected)
+            end
           end
         end
       end
@@ -957,7 +1190,6 @@ describe "an Active Record model which includes PgSearch" do
             :using => :tsearch,
             :against => :content,
             :ranked_by => ":tsearch"
-
 
           once = ModelWithPgSearch.create!(:content => 'foo bar')
           twice = ModelWithPgSearch.create!(:content => 'foo foo')
@@ -998,50 +1230,6 @@ describe "an Active Record model which includes PgSearch" do
       end
     end
 
-    context "on an STI subclass" do
-      with_model :SuperclassModel do
-        table do |t|
-          t.text 'content'
-          t.string 'type'
-        end
-
-        model do
-          include PgSearch
-        end
-      end
-
-      before do
-        SuperclassModel.pg_search_scope :search_content, :against => :content
-
-        class SearchableSubclassModel < SuperclassModel
-        end
-
-        class AnotherSearchableSubclassModel < SuperclassModel
-        end
-      end
-
-      it "returns only results for that subclass" do
-        included = [
-          SearchableSubclassModel.create!(:content => "foo bar")
-        ]
-        excluded = [
-          SearchableSubclassModel.create!(:content => "baz"),
-          SuperclassModel.create!(:content => "foo bar"),
-          SuperclassModel.create!(:content => "baz"),
-          AnotherSearchableSubclassModel.create!(:content => "foo bar"),
-          AnotherSearchableSubclassModel.create!(:content => "baz")
-        ]
-
-        expect(SuperclassModel.count).to eq(6)
-        expect(SearchableSubclassModel.count).to eq(2)
-
-        results = SearchableSubclassModel.search_content("foo bar")
-
-        expect(results).to include(*included)
-        expect(results).not_to include(*excluded)
-      end
-    end
-
     context "when there is a sort only feature" do
       it "excludes that feature from the conditions, but uses it in the sorting" do
         ModelWithPgSearch.pg_search_scope :search_content_ranked_by_dmetaphone,
@@ -1060,237 +1248,6 @@ describe "an Active Record model which includes PgSearch" do
         results = ModelWithPgSearch.search_content_ranked_by_dmetaphone("ash hines")
         expect(results).to eq [exact, one_exact_one_close, one_exact]
       end
-    end
-  end
-
-  describe ".multisearchable" do
-    it "should include the Multisearchable module" do
-      expect(ModelWithPgSearch).to receive(:include).with(PgSearch::Multisearchable)
-      ModelWithPgSearch.multisearchable
-    end
-
-    it "should set pg_search_multisearchable_options on the class" do
-      options = double(:options)
-      ModelWithPgSearch.multisearchable(options)
-      expect(ModelWithPgSearch.pg_search_multisearchable_options).to eq(options)
-    end
-  end
-
-  describe ".multisearch" do
-    with_table "pg_search_documents", {}, &DOCUMENTS_SCHEMA
-
-    describe "delegation to PgSearch::Document.search" do
-      subject { PgSearch.multisearch(query) }
-
-      let(:query) { double(:query) }
-      let(:relation) { double(:relation) }
-      before do
-        expect(PgSearch::Document).to receive(:search).with(query).and_return(relation)
-      end
-
-      it { is_expected.to eq(relation) }
-    end
-
-    context "with PgSearch.multisearch_options set to a Hash" do
-      before { allow(PgSearch).to receive(:multisearch_options).and_return({:using => :dmetaphone}) }
-      subject { PgSearch.multisearch(query).map(&:searchable) }
-
-      with_model :MultisearchableModel do
-        table do |t|
-          t.string :title
-        end
-        model do
-          include PgSearch
-          multisearchable :against => :title
-        end
-      end
-
-      let!(:soundalike_record) { MultisearchableModel.create!(:title => 'foning') }
-      let(:query) { "Phoning" }
-      it { is_expected.to include(soundalike_record) }
-    end
-
-    context "with PgSearch.multisearch_options set to a Proc" do
-      subject { PgSearch.multisearch(query, soundalike).map(&:searchable) }
-
-      before do
-        allow(PgSearch).to receive(:multisearch_options) do
-          lambda do |query, soundalike|
-            if soundalike
-              {:using => :dmetaphone, :query => query}
-            else
-              {:query => query}
-            end
-          end
-        end
-      end
-
-      with_model :MultisearchableModel do
-        table do |t|
-          t.string :title
-        end
-        model do
-          include PgSearch
-          multisearchable :against => :title
-        end
-      end
-
-      let!(:soundalike_record) { MultisearchableModel.create!(:title => 'foning') }
-      let(:query) { "Phoning" }
-
-      context "with soundalike true" do
-        let(:soundalike) { true }
-        it { is_expected.to include(soundalike_record) }
-      end
-
-      context "with soundalike false" do
-        let(:soundalike) { false }
-        it { is_expected.not_to include(soundalike_record) }
-      end
-    end
-
-    context "on an STI subclass" do
-      with_model :SuperclassModel do
-        table do |t|
-          t.text 'content'
-          t.string 'type'
-        end
-      end
-
-      before do
-        searchable_subclass_model = Class.new(SuperclassModel) do
-          include PgSearch
-          multisearchable :against => :content
-        end
-        stub_const("SearchableSubclassModel", searchable_subclass_model)
-        stub_const("AnotherSearchableSubclassModel", searchable_subclass_model)
-        stub_const("NonSearchableSubclassModel", Class.new(SuperclassModel))
-      end
-
-      it "returns only results for that subclass" do
-        included = [
-          SearchableSubclassModel.create!(:content => "foo bar")
-        ]
-        excluded = [
-          SearchableSubclassModel.create!(:content => "baz"),
-          SuperclassModel.create!(:content => "foo bar"),
-          SuperclassModel.create!(:content => "baz"),
-          NonSearchableSubclassModel.create!(:content => "foo bar"),
-          NonSearchableSubclassModel.create!(:content => "baz")
-        ]
-
-        expect(SuperclassModel.count).to be 6
-        expect(SearchableSubclassModel.count).to be 2
-
-        expect(PgSearch::Document.count).to be 2
-
-        results = PgSearch.multisearch("foo bar")
-
-        expect(results.length).to be 1
-        expect(results.first.searchable.class).to be SearchableSubclassModel
-        expect(results.first.searchable).to eq included.first
-      end
-
-      it "updates an existing STI model does not create a new pg_search document" do
-        model = SearchableSubclassModel.create!(:content => "foo bar")
-        expect(SearchableSubclassModel.count).to eq(1)
-        # We fetch the model from the database again otherwise
-        # the pg_search_document from the cache is used.
-        model = SearchableSubclassModel.find(model.id)
-        model.content = "foo"
-        model.save!
-        results = PgSearch.multisearch("foo")
-        expect(results.size).to eq(SearchableSubclassModel.count)
-      end
-
-      it "reindexing works" do
-        NonSearchableSubclassModel.create!(:content => "foo bar")
-        NonSearchableSubclassModel.create!(:content => "baz")
-        expected = SearchableSubclassModel.create!(:content => "baz")
-        SuperclassModel.create!(:content => "foo bar")
-        SuperclassModel.create!(:content => "baz")
-        SuperclassModel.create!(:content => "baz2")
-
-        expect(SuperclassModel.count).to be 6
-        expect(NonSearchableSubclassModel.count).to be 2
-        expect(SearchableSubclassModel.count).to be 1
-
-        expect(PgSearch::Document.count).to be 1
-
-        PgSearch::Multisearch.rebuild(SearchableSubclassModel)
-
-        expect(PgSearch::Document.count).to be 1
-        expect(PgSearch::Document.first.searchable.class).to be SearchableSubclassModel
-        expect(PgSearch::Document.first.searchable).to eq expected
-      end
-
-      it "reindexing searchable STI doesn't clobber other related STI models" do
-        searchable_s = SearchableSubclassModel.create!(:content => "baz")
-        searchable_a = AnotherSearchableSubclassModel.create!(:content => "baz")
-
-        expect(PgSearch::Document.count).to be 2
-        PgSearch::Multisearch.rebuild(SearchableSubclassModel)
-        expect(PgSearch::Document.count).to be 2
-
-        classes = PgSearch::Document.all.collect {|d| d.searchable.class }
-        expect(classes).to include SearchableSubclassModel
-        expect(classes).to include AnotherSearchableSubclassModel
-      end
-    end
-  end
-
-  describe ".disable_multisearch" do
-    it "should temporarily disable multisearch" do
-      @multisearch_enabled_before = PgSearch.multisearch_enabled?
-      PgSearch.disable_multisearch do
-        @multisearch_enabled_inside = PgSearch.multisearch_enabled?
-      end
-      @multisearch_enabled_after = PgSearch.multisearch_enabled?
-
-      expect(@multisearch_enabled_before).to be(true)
-      expect(@multisearch_enabled_inside).to be(false)
-      expect(@multisearch_enabled_after).to be(true)
-    end
-
-    it "should reenable multisearch after an error" do
-      @multisearch_enabled_before = PgSearch.multisearch_enabled?
-      begin
-        PgSearch.disable_multisearch do
-          @multisearch_enabled_inside = PgSearch.multisearch_enabled?
-          raise
-        end
-      rescue # rubocop:disable Lint/HandleExceptions
-      end
-
-      @multisearch_enabled_after = PgSearch.multisearch_enabled?
-
-      expect(@multisearch_enabled_before).to be(true)
-      expect(@multisearch_enabled_inside).to be(false)
-      expect(@multisearch_enabled_after).to be(true)
-    end
-
-    it "should not disable multisearch on other threads" do
-      values = Queue.new
-      sync = Queue.new
-      Thread.new do
-        values.push PgSearch.multisearch_enabled?
-        sync.pop # wait
-        values.push PgSearch.multisearch_enabled?
-        sync.pop # wait
-        values.push PgSearch.multisearch_enabled?
-      end
-
-      @multisearch_enabled_before = values.pop
-      PgSearch.disable_multisearch do
-        sync.push :go
-        @multisearch_enabled_inside = values.pop
-      end
-      sync.push :go
-      @multisearch_enabled_after = values.pop
-
-      expect(@multisearch_enabled_before).to be(true)
-      expect(@multisearch_enabled_inside).to be(true)
-      expect(@multisearch_enabled_after).to be(true)
     end
   end
 end

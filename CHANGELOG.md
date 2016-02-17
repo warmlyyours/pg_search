@@ -1,8 +1,36 @@
 # pg_search changelog
 
+## 1.0.5
+
+*   Clean up rank table aliasing (Adam Milligan)
+*   Fix issue when using `#with_pg_search_rank` across a join (Reid Lynch)
+
+## 1.0.4
+
+*   Assert valid options for features. (Janko Marohnić)
+*   Enable chaining of pg_search scopes. (Nicolas Buduroi)
+
+## 1.0.3
+
+*   Support STI models using a custom inheritance column. (Nick Doiron)
+
+## 1.0.2
+
+*   Don’t use SQL to rebuild search documents when models are multisearchable against dynamic methods and not just columns. Iterate over each record with `find_each` instead.
+
+## 1.0.1
+
+*   Call `.unscoped` on relation used to build subquery, to eliminate unnecessary JOINs. (Markus Doits)
+
+## 1.0.0
+
+*   Support more `ActiveRecord::Relation` methods, such as `#pluck` and `#select` by moving search-related operations to subquery.
+*   Generate index by default in migration for `pg_search_documents` table.
+*   Start officially using [Semantic Versioning 2.0.0](http://semver.org/spec/v2.0.0.html).
+
 ## 0.7.9
 
-*   Improve support for single table inheritance (STI) models (Ewan McDougall)
+*   Improve support for single table inheritance (STI) models. (Ewan McDougall)
 
 ## 0.7.8
 

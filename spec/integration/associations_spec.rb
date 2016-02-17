@@ -67,7 +67,7 @@ describe PgSearch do
           ModelWithBelongsTo.create!(:title => 'abcdef')
         ]
         excluded = ModelWithBelongsTo.create!(:title => 'mnopqr',
-                                                 :another_model => AssociatedModel.create!(:title => 'stuvwx'))
+                                              :another_model => AssociatedModel.create!(:title => 'stuvwx'))
 
         results = ModelWithBelongsTo.with_associated('abcdef')
         expect(results.map(&:title)).to match_array(included.map(&:title))
@@ -99,17 +99,17 @@ describe PgSearch do
       it "returns rows that match the query in either its own columns or the columns of the associated model" do
         included = [
           ModelWithHasMany.create!(:title => 'abcdef', :other_models => [
-                                      AssociatedModelWithHasMany.create!(:title => 'foo'),
-                                      AssociatedModelWithHasMany.create!(:title => 'bar')
-        ]),
+            AssociatedModelWithHasMany.create!(:title => 'foo'),
+            AssociatedModelWithHasMany.create!(:title => 'bar')
+          ]),
           ModelWithHasMany.create!(:title => 'ghijkl', :other_models => [
-                                      AssociatedModelWithHasMany.create!(:title => 'foo bar'),
-                                      AssociatedModelWithHasMany.create!(:title => 'mnopqr')
-        ]),
+            AssociatedModelWithHasMany.create!(:title => 'foo bar'),
+            AssociatedModelWithHasMany.create!(:title => 'mnopqr')
+          ]),
           ModelWithHasMany.create!(:title => 'foo bar')
         ]
         excluded = ModelWithHasMany.create!(:title => 'stuvwx', :other_models => [
-                                               AssociatedModelWithHasMany.create!(:title => 'abcdef')
+          AssociatedModelWithHasMany.create!(:title => 'abcdef')
         ])
 
         results = ModelWithHasMany.with_associated('foo bar')
@@ -117,10 +117,11 @@ describe PgSearch do
         expect(results).not_to include(excluded)
       end
 
-      it "uses an unscoped relation of the assocated model" do
+      it "uses an unscoped relation of the associated model" do
         excluded = ModelWithHasMany.create!(:title => 'abcdef', :other_models => [
           AssociatedModelWithHasMany.create!(:title => 'abcdef')
         ])
+
         included = [
           ModelWithHasMany.create!(:title => 'abcdef', :other_models => [
             AssociatedModelWithHasMany.create!(:title => 'foo'),
@@ -128,11 +129,14 @@ describe PgSearch do
           ])
         ]
 
-        results = ModelWithHasMany.limit(1).order("id ASC").with_associated('foo bar')
+        results = ModelWithHasMany
+                  .limit(1)
+                  .order("#{ModelWithHasMany.quoted_table_name}.id ASC")
+                  .with_associated('foo bar')
+
         expect(results.map(&:title)).to match_array(included.map(&:title))
         expect(results).not_to include(excluded)
       end
-
     end
 
     context "across multiple associations" do
@@ -160,10 +164,16 @@ describe PgSearch do
 
           model do
             include PgSearch
-            has_many :models_of_first_type, :class_name => 'FirstAssociatedModel', :foreign_key => 'ModelWithManyAssociations_id'
-            belongs_to :model_of_second_type, :class_name => 'SecondAssociatedModel'
 
-            pg_search_scope :with_associated, :against => :title,
+            has_many :models_of_first_type,
+              :class_name => 'FirstAssociatedModel',
+              :foreign_key => 'ModelWithManyAssociations_id'
+
+            belongs_to :model_of_second_type,
+              :class_name => 'SecondAssociatedModel'
+
+            pg_search_scope :with_associated,
+              :against => :title,
               :associated_against => {:models_of_first_type => :title, :model_of_second_type => :title}
           end
         end
@@ -174,20 +184,20 @@ describe PgSearch do
 
           included = [
             ModelWithManyAssociations.create!(:title => 'abcdef', :models_of_first_type => [
-                                              FirstAssociatedModel.create!(:title => 'foo'),
-                                              FirstAssociatedModel.create!(:title => 'bar')
-          ]),
+              FirstAssociatedModel.create!(:title => 'foo'),
+              FirstAssociatedModel.create!(:title => 'bar')
+            ]),
             ModelWithManyAssociations.create!(:title => 'ghijkl', :models_of_first_type => [
-                                              FirstAssociatedModel.create!(:title => 'foo bar'),
-                                              FirstAssociatedModel.create!(:title => 'mnopqr')
-          ]),
+              FirstAssociatedModel.create!(:title => 'foo bar'),
+              FirstAssociatedModel.create!(:title => 'mnopqr')
+            ]),
             ModelWithManyAssociations.create!(:title => 'foo bar'),
             ModelWithManyAssociations.create!(:title => 'qwerty', :model_of_second_type => matching_second)
           ]
           excluded = [
             ModelWithManyAssociations.create!(:title => 'stuvwx', :models_of_first_type => [
-                                              FirstAssociatedModel.create!(:title => 'abcdef')
-          ]),
+              FirstAssociatedModel.create!(:title => 'abcdef')
+            ]),
             ModelWithManyAssociations.create!(:title => 'qwerty', :model_of_second_type => unmatching_second)
           ]
 
@@ -214,36 +224,42 @@ describe PgSearch do
 
           model do
             include PgSearch
-            has_many :things, :class_name => 'DoublyAssociatedModel', :foreign_key => 'ModelWithDoubleAssociation_id'
-            has_many :thingamabobs, :class_name => 'DoublyAssociatedModel', :foreign_key => 'ModelWithDoubleAssociation_again_id'
+
+            has_many :things,
+              :class_name => 'DoublyAssociatedModel',
+              :foreign_key => 'ModelWithDoubleAssociation_id'
+
+            has_many :thingamabobs,
+              :class_name => 'DoublyAssociatedModel',
+              :foreign_key => 'ModelWithDoubleAssociation_again_id'
 
             pg_search_scope :with_associated, :against => :title,
-              :associated_against => {:things => :title, :thingamabobs => :title}
+                                              :associated_against => {:things => :title, :thingamabobs => :title}
           end
         end
 
         it "returns rows that match the query in either its own columns or the columns of the associated model" do
           included = [
             ModelWithDoubleAssociation.create!(:title => 'abcdef', :things => [
-                                                  DoublyAssociatedModel.create!(:title => 'foo'),
-                                                  DoublyAssociatedModel.create!(:title => 'bar')
-          ]),
+              DoublyAssociatedModel.create!(:title => 'foo'),
+              DoublyAssociatedModel.create!(:title => 'bar')
+            ]),
             ModelWithDoubleAssociation.create!(:title => 'ghijkl', :things => [
-                                                  DoublyAssociatedModel.create!(:title => 'foo bar'),
-                                                  DoublyAssociatedModel.create!(:title => 'mnopqr')
-          ]),
+              DoublyAssociatedModel.create!(:title => 'foo bar'),
+              DoublyAssociatedModel.create!(:title => 'mnopqr')
+            ]),
             ModelWithDoubleAssociation.create!(:title => 'foo bar'),
             ModelWithDoubleAssociation.create!(:title => 'qwerty', :thingamabobs => [
-                                                  DoublyAssociatedModel.create!(:title => "foo bar")
-          ])
+              DoublyAssociatedModel.create!(:title => "foo bar")
+            ])
           ]
           excluded = [
             ModelWithDoubleAssociation.create!(:title => 'stuvwx', :things => [
-                                                  DoublyAssociatedModel.create!(:title => 'abcdef')
-          ]),
+              DoublyAssociatedModel.create!(:title => 'abcdef')
+            ]),
             ModelWithDoubleAssociation.create!(:title => 'qwerty', :thingamabobs => [
-                                                  DoublyAssociatedModel.create!(:title => "uiop")
-          ])
+              DoublyAssociatedModel.create!(:title => "uiop")
+            ])
           ]
 
           results = ModelWithDoubleAssociation.with_associated('foo bar')
@@ -300,11 +316,10 @@ describe PgSearch do
 
         results = ModelWithAssociation.with_associated('foo bar')
 
-        expect(results.to_sql.scan("INNER JOIN").length).to eq(1)
+        expect(results.to_sql.scan("INNER JOIN #{AssociatedModel.quoted_table_name}").length).to eq(1)
         included.each { |object| expect(results).to include(object) }
         excluded.each { |object| expect(results).not_to include(object) }
       end
-
     end
 
     context "against non-text columns" do
@@ -409,13 +424,13 @@ describe PgSearch do
       excluded_associated_2 = AssociatedModel.create(:content => "baz bar")
 
       included = [
-          ModelWithAssociation.create(:associated_models => [included_associated_1]),
-          ModelWithAssociation.create(:associated_models => [included_associated_2, excluded_associated_1])
+        ModelWithAssociation.create(:associated_models => [included_associated_1]),
+        ModelWithAssociation.create(:associated_models => [included_associated_2, excluded_associated_1])
       ]
 
       excluded = [
-          ModelWithAssociation.create(:associated_models => [excluded_associated_2]),
-          ModelWithAssociation.create(:associated_models => [])
+        ModelWithAssociation.create(:associated_models => [excluded_associated_2]),
+        ModelWithAssociation.create(:associated_models => [])
       ]
 
       relation = AssociatedModel.search_content("foo")

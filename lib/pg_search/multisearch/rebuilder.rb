@@ -13,7 +13,7 @@ module PgSearch
       def rebuild
         if model.respond_to?(:rebuild_pg_search_documents)
           model.rebuild_pg_search_documents
-        elsif model.pg_search_multisearchable_options.key?(:if) || model.pg_search_multisearchable_options.key?(:unless)
+        elsif conditional? || dynamic?
           model.find_each { |record| record.update_pg_search_document }
         else
           model.connection.execute(rebuild_sql)
@@ -24,6 +24,15 @@ module PgSearch
 
       attr_reader :model
 
+      def conditional?
+        model.pg_search_multisearchable_options.key?(:if) || model.pg_search_multisearchable_options.key?(:unless)
+      end
+
+      def dynamic?
+        column_names = model.columns.map(&:name)
+        columns.any? { |column| !column_names.include?(column.to_s) }
+      end
+
       def connection
         model.connection
       end
@@ -33,7 +42,7 @@ module PgSearch
       end
 
       def rebuild_sql_template
-         <<-SQL.strip_heredoc
+        <<-SQL.strip_heredoc
           INSERT INTO :documents_table (searchable_type, searchable_id, content, created_at, updated_at)
             SELECT :base_model_name AS searchable_type,
                    :model_table.#{primary_key} AS searchable_id,
@@ -54,12 +63,12 @@ module PgSearch
 
       def sti_clause
         clause = ""
-        if model.column_names.include? 'type'
+        if model.column_names.include? model.inheritance_column
           clause = "WHERE"
           if model.base_class == model
-            clause = "#{clause} type IS NULL OR"
+            clause = "#{clause} #{model.inheritance_column} IS NULL OR"
           end
-          clause = "#{clause} type = #{model_name}"
+          clause = "#{clause} #{model.inheritance_column} = #{model_name}"
         end
         clause
       end
@@ -69,9 +78,7 @@ module PgSearch
       end
 
       def content_expressions
-        columns.map { |column|
-          %Q{coalesce(:model_table.#{column}::text, '')}
-        }.join(" || ' ' || ")
+        columns.map { |column| %{coalesce(:model_table.#{column}::text, '')} }.join(" || ' ' || ")
       end
 
       def columns

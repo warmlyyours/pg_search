@@ -9,8 +9,8 @@ Gem::Specification.new do |s|
   s.authors     = ["Grant Hutchins", "Case Commons, LLC"]
   s.email       = ["gems@nertzy.com", "casecommons-dev@googlegroups.com"]
   s.homepage    = "https://github.com/Casecommons/pg_search"
-  s.summary     = %q{PgSearch builds Active Record named scopes that take advantage of PostgreSQL's full text search}
-  s.description = %q{PgSearch builds Active Record named scopes that take advantage of PostgreSQL's full text search}
+  s.summary     = %q(PgSearch builds Active Record named scopes that take advantage of PostgreSQL's full text search)
+  s.description = %q(PgSearch builds Active Record named scopes that take advantage of PostgreSQL's full text search)
   s.licenses    = ["MIT"]
 
   s.files         = `git ls-files`.split("\n")
@@ -23,9 +23,9 @@ Gem::Specification.new do |s|
 
   s.add_development_dependency 'rake'
   s.add_development_dependency 'pry'
-  s.add_development_dependency 'rspec', '~> 3.0'
+  s.add_development_dependency 'rspec', '>= 3.3'
   s.add_development_dependency 'with_model', '>= 1.2'
-  s.add_development_dependency 'rubocop'
+  s.add_development_dependency 'rubocop', '>= 0.36'
 
   s.required_ruby_version = ">= 1.9.2"
 end

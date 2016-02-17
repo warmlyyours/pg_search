@@ -5,10 +5,12 @@ describe PgSearch::Features::Trigram do
   subject(:feature) { described_class.new(query, options, columns, Model, normalizer) }
   let(:query) { 'lolwut' }
   let(:options) { {} }
-  let(:columns) {[
-    PgSearch::Configuration::Column.new(:name, nil, Model),
-    PgSearch::Configuration::Column.new(:content, nil, Model)
-  ]}
+  let(:columns) {
+    [
+      PgSearch::Configuration::Column.new(:name, nil, Model),
+      PgSearch::Configuration::Column.new(:content, nil, Model)
+    ]
+  }
   let(:normalizer) { PgSearch::Normalizer.new(config) }
   let(:config) { OpenStruct.new(:ignore => [], :postgresql_version => 90000) }
 
@@ -59,7 +61,6 @@ describe PgSearch::Features::Trigram do
           coalesced_column = "coalesce(#{Model.quoted_table_name}.\"name\"::text, '')"
           expect(feature.conditions.to_sql).to eq("((#{coalesced_column}) % '#{query}')")
         end
-
       end
       context 'multiple columns' do
         let(:options) { { only: [:name, :content] } }
@@ -70,7 +71,6 @@ describe PgSearch::Features::Trigram do
         end
       end
     end
-
   end
 
   describe '#rank' do

@@ -15,7 +15,6 @@ require "pg_search/version"
 
 module PgSearch
   extend ActiveSupport::Concern
-  include Compatibility::ActiveRecord3 if ActiveRecord::VERSION::MAJOR == 3
 
   mattr_accessor :multisearch_options
   self.multisearch_options = {}
@@ -31,19 +30,13 @@ module PgSearch
                        unless options.respond_to?(:merge)
                          raise ArgumentError, "pg_search_scope expects a Hash or Proc"
                        end
-                       lambda { |query| {:query => query}.merge(options) }
+                       ->(query) { {:query => query}.merge(options) }
                      end
 
-      method_proc = lambda do |*args|
+      define_singleton_method(name) do |*args|
         config = Configuration.new(options_proc.call(*args), self)
         scope_options = ScopeOptions.new(config)
         scope_options.apply(self)
-      end
-
-      if respond_to?(:define_singleton_method)
-        define_singleton_method name, &method_proc
-      else
-        (class << self; self; end).send :define_method, name, &method_proc
       end
     end
 
@@ -75,7 +68,33 @@ module PgSearch
     end
   end
 
+  def method_missing(symbol, *args)
+    case symbol
+    when :pg_search_rank
+      raise PgSearchRankNotSelected.new unless respond_to?(:pg_search_rank)
+      read_attribute(:pg_search_rank).to_f
+    else
+      super
+    end
+  end
+
+  def respond_to_missing?(symbol, *args)
+    case symbol
+    when :pg_search_rank
+      attributes.key?(:pg_search_rank)
+    else
+      super
+    end
+  end
+
   class NotSupportedForPostgresqlVersion < StandardError; end
+
+  class PgSearchRankNotSelected < StandardError
+    # rubocop:disable Metrics/LineLength
+    def message
+      "You must chain .with_pg_search_rank after the pg_search_scope to access the pg_search_rank attribute on returned records"
+    end
+  end
 end
 
 require "pg_search/document"
